@@ -31,8 +31,28 @@ class KlangService:
         return path_project_config
 
     @staticmethod
+    def check_if_project_config_exists(project_name: str) -> bool:
+        path_project_config = KlangService.get_path_project_config(
+            project_name
+        )
+        return os.path.isfile(path_project_config)
+
+    @staticmethod
+    def create_project_config_file(project_name: str):
+        path_project_config = KlangService.get_path_project_config(
+            project_name
+        )
+        with open(path_project_config, "w", encoding="utf-8") as outfile:
+            outfile.write(json.dumps({'admins': []}))
+            outfile.close()
+
+    @staticmethod
     def get_project_config(project_name: str):
-        path_project_config = KlangService.get_path_project_config(project_name)
+        path_project_config = KlangService.get_path_project_config(
+            project_name
+        )
+        if not KlangService.check_if_project_config_exists(project_name):
+            KlangService.create_project_config_file(project_name)
         with open(path_project_config, "r", encoding="utf-8") as infile:
             project_config = json.load(infile)
         return project_config

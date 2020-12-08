@@ -44,11 +44,16 @@ class ProjectAdminsServiceResource(Resource):
 
     def post(self, project_name):
         "post a list of admins (replace the old one)"
+        # block invalid request from non-superadmin users
+        if not current_user.super_admin:
+            return current_app.login_manager.unauthorized()
+        
         parser = reqparse.RequestParser()
         parser.add_argument(name="admins", type=str, action="append")
         args = parser.parse_args()
         admins = args.get("admins")
-
+        if admins == None:
+            admins = []
         project_config = KlangService.get_project_config(project_name)
         project_config["admins"] = admins
         KlangService.update_project_config(project_name, project_config)
