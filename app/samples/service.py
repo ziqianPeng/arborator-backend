@@ -1,3 +1,4 @@
+from app.utils.conllup import ConllProcessor
 import io
 import json
 import os
@@ -15,8 +16,9 @@ from flask import abort, current_app
 from sqlalchemy.sql.operators import startswith_op
 from werkzeug.utils import secure_filename
 from werkzeug.datastructures import FileStorage
-
 from .model import SampleExerciseLevel, SampleRole
+
+BASE_TREE = "base_tree"
 
 
 class SampleUploadService:
@@ -44,7 +46,6 @@ class SampleUploadService:
 
         with open(path_file, "rb") as file_to_save:
             GrewService.save_sample(project_name, sample_name, file_to_save)
-        
 
 
 # TODO : refactor this
@@ -55,7 +56,7 @@ class SampleExportService:
         trees = {}
         for sentId, users in samples.items():
             for user_id, conll in users.items():
-                # tree = conll3.conll2tree(conll)
+                # tree = conll3.ConllProcessor.sentence_conll_to_sentence_json(conll)
                 if sentId not in trees:
                     trees[sentId] = {"conlls": {}}
                 trees[sentId]["conlls"][user_id] = conll
@@ -77,8 +78,7 @@ class SampleExportService:
 
     @staticmethod
     def get_last_user(tree):
-        timestamps = [(user, get_timestamp(conll))
-                      for (user, conll) in tree.items()]
+        timestamps = [(user, get_timestamp(conll)) for (user, conll) in tree.items()]
         if len(timestamps) == 1:
             last = timestamps[0][0]
         else:
@@ -93,8 +93,7 @@ class SampleExportService:
         with zipfile.ZipFile(memory_file, "w") as zf:
             for sample_name, sample in zip(sample_names, sampletrees):
                 for fuser, filecontent in sample.items():
-                    data = zipfile.ZipInfo(
-                        "{}.{}.conllu".format(sample_name, fuser))
+                    data = zipfile.ZipInfo("{}.{}.conllu".format(sample_name, fuser))
                     data.date_time = time.localtime(time.time())[:6]
                     data.compress_type = zipfile.ZIP_DEFLATED
                     zf.writestr(data, filecontent)
@@ -171,8 +170,7 @@ class SampleRoleService:
                 .filter(SampleRole.role == r)
                 .all()
             )
-            roles[label] = [{"key": a.username, "value": a.username}
-                            for a, b in role]
+            roles[label] = [{"key": a.username, "value": a.username} for a, b in role]
 
         return roles
 
@@ -234,6 +232,105 @@ class SampleExerciseLevelService:
         return
 
 
+from app.utils.conll3 import conll2tree
+
+
+class SampleEvaluationService:
+    @staticmethod
+    def evaluate_sample(sample_conlls):
+        corrects = {}
+        submitted = {}
+        total = {"upos": 0, "deprel": 0, "head": 0}
+        for sentence_id, sentence_conlls in sample_conlls.items():
+            teacher_conll = sentence_conlls.get("teacher")
+            if teacher_conll:
+                teacher_sentence_json = ConllProcessor.sentence_conll_to_sentence_json(
+                    teacher_conll
+                )
+                teacher_tree = teacher_sentence_json["tree"]
+
+                basetree_conll = sentence_conlls.get(BASE_TREE)
+                if basetree_conll:
+                    basetree_sentence_json = (
+                        ConllProcessor.sentence_conll_to_sentence_json(basetree_conll)
+                    )
+                    basetree_tree = basetree_sentence_json["tree"]
+                else:
+                    basetree_tree = {}
+
+                for token_id in teacher_tree.keys():
+                    teacher_token = teacher_tree.get(token_id)
+                    basetree_token = basetree_tree.get(token_id, {})
+                    for label in ["upos", "head", "deprel"]:
+                        if (
+                            teacher_token[label] != "_"
+                            and basetree_token.get(label) != teacher_token[label]
+                        ):
+                            total[label] += 1
+
+            else:
+                continue
+
+            for user_id, user_conll in sentence_conlls.items():
+
+                if user_id != "teacher":
+                    if not corrects.get(user_id):
+                        corrects[user_id] = {"upos": 0, "deprel": 0, "head": 0}
+                    if not submitted.get(user_id):
+                        submitted[user_id] = {"upos": 0, "deprel": 0, "head": 0}
+
+                    user_sentence_json = ConllProcessor.sentence_conll_to_sentence_json(
+                        user_conll
+                    )
+                    user_tree = user_sentence_json["tree"]
+
+                    for token_id in user_tree.keys():
+                        teacher_token = teacher_tree.get(token_id)
+                        user_token = user_tree.get(token_id)
+                        basetree_token = basetree_tree.get(token_id, {})
+
+                        for label in ["upos", "head", "deprel"]:
+                            if (
+                                teacher_token[label] != "_"
+                                and basetree_token.get(label) != teacher_token[label]
+                            ):
+                                if user_token[label] != "_":
+                                    submitted[user_id][label] += 1
+                                corrects[user_id][label] += (
+                                    teacher_token[label] == user_token[label]
+                                )
+        GRADE = 100
+        evaluations = {}
+        for user_id in corrects.keys():
+            evaluations[user_id] = {}
+            for label in ["upos", "deprel", "head"]:
+                score = corrects[user_id][label] / total[label]
+                score_on_twenty = score * GRADE
+                rounded_score = int(score_on_twenty)
+                evaluations[user_id][f"{label}_total"] = total[label]
+                evaluations[user_id][f"{label}_submitted"] = submitted[user_id][label]
+                evaluations[user_id][f"{label}_correct"] = corrects[user_id][label]
+                evaluations[user_id][f"{label}_grade_on_{GRADE}"] = rounded_score
+
+        return evaluations
+
+    @staticmethod
+    def evaluations_json_to_tsv(evaluations):
+        list_usernames = list(evaluations.keys())
+        first_username = list(evaluations.keys())[0]
+        columns = list(evaluations[first_username].keys())
+
+        evaluations_tsv = "\t".join(["usernames"] + list_usernames)
+
+        for label in columns:
+            user_tsv_line_list = [label]
+            for username in list_usernames:
+                user_tsv_line_list.append(str(evaluations[username][label]))
+            user_tsv_line_string = "\t".join(user_tsv_line_list)
+            evaluations_tsv += "\n" + user_tsv_line_string
+        return evaluations_tsv
+
+
 #
 #
 #############    Helpers Function    #############
@@ -276,7 +373,7 @@ def add_or_keep_timestamps(path_file: str):
             timestamp = datetime.timestamp(now) * 1000
             timestamp = round(timestamp)
             t.sentencefeatures["timestamp"] = str(timestamp)
-    
+
     trees2conllFile(trees, path_file)
     return path_file
     # trees2conllFile(trees, path_tmp_file)

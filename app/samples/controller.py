@@ -1,15 +1,23 @@
 import json
 import re
 
+from flask.helpers import send_file
+
 from app.projects.service import ProjectService
 from app.user.service import UserService
 from app.utils.grew_utils import GrewService, grew_request
-from flask import Response, abort, current_app, request
+from flask import Response, abort, current_app, request, send_from_directory
 from flask_restx import Namespace, Resource, reqparse
+# from openpyxl import Workbook
 
 from .model import SampleRole
-from .service import (SampleExerciseLevelService, SampleExportService,
-                      SampleRoleService, SampleUploadService)
+from .service import (
+    SampleEvaluationService,
+    SampleExerciseLevelService,
+    SampleExportService,
+    SampleRoleService,
+    SampleUploadService,
+)
 
 api = Namespace(
     "Samples", description="Endpoints for dealing with samples of project"
@@ -133,6 +141,23 @@ class SampleExerciseLevelResource(Resource):
             SampleExerciseLevelService.create(new_attrs)
 
         return {"status": "success"}
+from app.shared.service import SharedService
+
+@api.route("/<string:project_name>/samples/<string:sample_name>/evaluation")
+class SampleEvaluationResource(Resource):
+    def get(self, project_name, sample_name):
+        sample_conlls = GrewService.get_sample_trees(project_name, sample_name)
+        evaluations = SampleEvaluationService.evaluate_sample(sample_conlls)
+        
+        if evaluations:
+            evaluations_tsv = SampleEvaluationService.evaluations_json_to_tsv(evaluations)
+
+            uploadable_evaluations_tsv = SharedService.get_sendable_data(evaluations_tsv)
+            
+            file_name = f"{sample_name}_evaluations.tsv"
+            return send_file(uploadable_evaluations_tsv, attachment_filename = file_name, as_attachment=True)
+        else:
+            abort(404, "No user worked on this sample")
 
 
 @api.route("/<string:project_name>/samples/export")

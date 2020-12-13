@@ -12,6 +12,8 @@ app/klang/data_prod/
 
 app/public/tmp/*
 
+app/public/tmp/*
+
 .idea/
 *.pyc
 py3/
