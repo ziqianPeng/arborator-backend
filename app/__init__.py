@@ -49,6 +49,6 @@ def create_app(env=None):
     ## service for mp3 file, which will be taken from app/public folder
     @app.route('/media/<path:path>')
     def media(path):
-        return send_from_directory('public/mp3', path)
+        return send_from_directory('public/media', path)
 
     return app
