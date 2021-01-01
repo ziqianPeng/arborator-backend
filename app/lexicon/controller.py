@@ -3,7 +3,7 @@ import re
 
 from app.projects.service import ProjectService
 from app.user.service import UserService
-from app.utils.grew_utils import grew_request
+from app.utils.grew_utils import GrewService, grew_request
 from flask import Response, abort, current_app, request
 from flask_login import current_user
 from flask_restx import Namespace, Resource, reqparse
@@ -91,7 +91,8 @@ class TransformationGrewResource(Resource):
             3 :"Gloss",
             4 : "trait"
             }
-        for i in lexicon['data'] :
+
+        for i in lexicon :
             rule_grew = "pattern {"
             #print(i['info2Change'])
             line1 = i['currentInfo'].split(' ')
@@ -111,7 +112,7 @@ class TransformationGrewResource(Resource):
             rule_grew += " command{ " + commands[comp-1]+"}"
         patterns[0] = '% click the button \'Correct lexicon\' to update the queries\n\npattern { ' + patterns[0][0:]
         commands[0] = 'commands { '+ commands[0][0:]
-        patterns[len(lexicon['data'])-1] += ' }'
+        patterns[len(lexicon)-1] += ' }'
         commands.append('}')
         if len(without) != 0 :
             without = '\nwithout { ' + without + '}'
@@ -127,13 +128,13 @@ class TransformationGrewResource(Resource):
         return resp
 
 
-# TODO : It seems that this function is not finished. Ask Lila what should be done -> finished function
+# TODO : It seems that this function is not finished. Ask Lila what should be done
 @api.route("/<project_name>/upload/validator", methods=["POST", "OPTIONS"])
 class LexiconUploadValidatorResource(Resource):
     def post(self, project_name):
-        fichier = request.files["files"]
-        f = fichier.read()
-        resp = {"validator": f, "message": "hello"}
+        file = request.files['files'].read()
+        file = json.dumps(file.decode("utf-8"))
+        resp = {"validator": file, "message": "hello"}
         resp["status_code"] = 200
         return resp
 
@@ -143,26 +144,26 @@ class LexiconAddValidatorResource(Resource):
     def post(self, project_name: str):
         parser = reqparse.RequestParser()
         parser.add_argument(name="data", type=dict, action="append")
-        parser.add_argument(name="validator", type=dict, action="append")
+        parser.add_argument(name="validator", type=str, action="append")
+        print("ok")
+
         args = parser.parse_args()
         lexicon = args.get("data")
-
-        
-        lexicon = args.get("data")
-        validator = args.get("validator")
+        validator = json.loads(args.get("validator")[0])
         list_validator = []
-        line=[]
+        line = []
         A = []
         B = []
-        AB_Ok=[]
-        AB_Diff=[]
+        AB_Ok = []
+        AB_Diff = []
         list_types = {
             "In the two dictionaries with the same information" : AB_Ok,
             "Identical form in both dictionaries with different information" : AB_Diff,
             "Only in the old dictionary" : A,
-            "Only in the imported dictionary" : B}
-
-        for i in validator['validator'].split('\n'):
+            "Only in the imported dictionary" : B
+        }
+        
+        for i in validator.split('\n'):
             a = i.split("\t")
             if a[-1] == '': 
                 a.pop()
@@ -179,30 +180,28 @@ class LexiconAddValidatorResource(Resource):
                 list_validator.append(newjson)
         # print("lexicon = \n", list_lexicon, "\n\nval = \n", list_validator)
 
-        
-        for x in lexicon['data']:
+        for x in lexicon:
             if 'frequency' in x: 
                 del x['frequency']
             for y in list_validator:
                 # le token existe dans les deux dicts avec les mêmes feats
                 if x['key'] == y['key'] and x not in AB_Ok and x not in AB_Diff: 
-                    x['toChange'] = "_"
                     AB_Ok.append(x)
+                    
                 # le terme existe dans les deux dictionnaires mais avec de différents feats
                 elif x['key'] != y['key'] and x['form'] == y['form'] and x not in AB_Ok and x not in AB_Diff and y not in AB_Ok and y not in AB_Diff: 
                     x['toChange'] = y['form'] + ' ' + y['lemma'] + ' ' + y['POS'] + ' ' + y['gloss'] + ' ' + y['features']
                     AB_Diff.extend((x,y))
-
-        # le token n'existe pas dans le dict A
-        for x in lexicon['data']:
-            if x not in AB_Ok and x not in AB_Diff and x not in A:
-                x['toChange'] = "_"
-                A.append(x)
+                    print(x, "------->", y)
 
         # le token n'existe pas dans le dict B
+        for x in lexicon:
+            if x not in AB_Ok and x not in AB_Diff and x not in A:
+                A.append(x)
+
+        # le token n'existe pas dans le dict A
         for y in list_validator:
             if y not in AB_Ok and y not in AB_Diff and x not in B: 
-                y['toChange'] = "_"
                 B.append(y)
 
         # print("AAAAAAA ",A,"\n\nBBBBBBBB ",B, "\n\nAB OK", AB_Ok, "\n\nAB Diff", AB_Diff)
@@ -211,10 +210,126 @@ class LexiconAddValidatorResource(Resource):
             for s in list_types[i]:
                 s['type'] = i
                 line.append(s)
+                if 'toChange' not in s:
+                    s['toChange'] = '_'
         # print(line)
         resp = {"dics": line, "message": "hello"}
         resp["status_code"] = 200
         return resp
+
+
+
+@api.route("/<string:project_name>/try-rules")
+class TryRulesResource(Resource):
+    def post(self, project_name: str):
+        """
+        expects json with grew pattern such as
+        {
+        "pattern":"pattern { N [upos=\"NUM\"] }"
+        "rewriteCommands":"commands { N [upos=\"NUM\"] }"
+        }
+        important: simple and double quotes must be escaped!
+
+
+        returns:
+        {'sample_id': 'P_WAZP_07_Imonirhuas.Life.Story_PRO', 'sent_id': 'P_WAZP_07_Imonirhuas-Life-Story_PRO_97', 'nodes': {'N': 'Bernard_11'}, 'edges': {}}, {'sample_id':...
+        """
+
+        project = ProjectService.get_by_name(project_name)
+        ProjectService.check_if_project_exist(project)
+
+        # TODO : to change
+        if not request.json:
+            abort(400)
+
+        parser = reqparse.RequestParser()
+        parser.add_argument(name="pattern", type=str)
+        parser.add_argument(name="rewriteCommands", type=str)
+        args = parser.parse_args()
+        pattern = args.get("pattern")
+        rewriteCommands = args.get("rewriteCommands")
+        list_rules = []	
+
+        if "X1" in pattern:
+            try:
+                without = pattern[pattern.index("without")+10:-1].split(" ")
+            except ValueError: 
+                without = ""
+            pattern = pattern[pattern.index("{")+3:pattern.index("}")-1].split(",X")
+            print(pattern)
+            commands = rewriteCommands[rewriteCommands.index("{")+2:rewriteCommands.index("}")-2].split("; ")
+            print(commands)
+            for singlePattern in pattern:
+                commands_output, without_output = "", ""
+                for singleCommand in commands:
+                    if singleCommand[singleCommand.index("X")+1] == singlePattern[0]:
+                        commands_output += singleCommand + "; "
+                
+                for singleWithout in without:
+                    #print(singleWithout)
+                    if singleWithout[1] == singlePattern[0]:
+                        without_output += singleWithout
+                if without_output:
+                    rule = 'pattern {X' + singlePattern + '} without {' + without_output + '} commands {' + commands_output + '}'
+                else:
+                    rule = 'pattern {X' + singlePattern + '} commands {' + commands_output + '}'
+                # if without_output != "" :
+                # 	query = json.dumps({'pattern': 'pattern {X'+singlePattern+'}', 'without': 'without {'+without_output+'}', 'rewriteCommands': 'commands {'+commands_output+'}'})
+                # 	# jsonify({'pattern': "pattern {X"+singlePattern+"}", 'without': 'without {'+without_output+'}', 'rewriteCommands': 'commands {'+commands_output+'}'})
+                # else :
+                # 	query = json.dumps({'pattern': 'pattern {X'+singlePattern+'}', 'rewriteCommands': 'commands {'+commands_output+'}'})
+                list_rules.append(rule)
+        
+        else:
+            rule = pattern + " " + rewriteCommands
+            list_rules.append(rule)
+            print(pattern)
+        
+        print("liste des règles : ",list_rules)
+
+        reply = grew_request(
+            "tryRules",
+            data={
+                "project_id": project_name,
+                "rules":json.dumps(list_rules)
+            },
+        )
+        print(8989,reply)
+        # tryRule(<string> project_id, [<string> sample_id], [<string> user_id], <string> pattern, <string> commands)
+
+        if reply["status"] != "OK":
+            if "message" in reply:
+                resp = {
+                    "status_code": 444,
+                    "status": reply["status"],
+                    "message": reply["message"],
+                }
+                status_code = 444
+                return resp
+            abort(400)
+        trees = {}
+        # matches={}
+        # reendswithnumbers = re.compile(r"_(\d+)$")
+        # {'WAZL_15_MC-Abi_MG': {'WAZL_15_MC-Abi_MG__8': {'sentence': '# kalapotedly < you see < # ehn ...', 'conlls': {'kimgerdes': ..
+        for m in reply["data"]:
+            if m["user_id"] == "":
+                abort(409)
+            print("___")
+            # for x in m:
+            # 	print('mmmm',x)
+            trees["sample_id"] = trees.get("sample_id", {})
+            trees["sample_id"]["sent_id"] = trees["sample_id"].get(
+                "sent_id", {"conlls": {}, "nodes": {}, "edges": {}}
+            )
+            trees["sample_id"]["sent_id"]["conlls"][m["user_id"]] = m["conll"]
+            # trees['sample_id']['sent_id']['matches'][m['user_id']]=[{"edges":{},"nodes":{}}] # TODO: get the nodes and edges from the grew server!
+            if "sentence" not in trees["sample_id"]["sent_id"]:
+                trees["sample_id"]["sent_id"]["sentence"] = conll2tree(
+                    m["conll"]
+                ).sentence()
+            # print('mmmm',trees['sample_id']['sent_id'])
+        return trees
+
 
 
 ################################################################################
@@ -238,6 +353,7 @@ def transform_grew_verif(ligne1, ligne2): #Voir différences entre deux lignes
 			liste.append(i)
 	#print("transform_grew_verif",liste)
 	return liste
+
 
 def transform_grew_get_pattern(ligne, dic, comp): 
 	pattern = "X" + str(comp) + '[form=\"' + ligne[0] + '\"'
@@ -291,6 +407,7 @@ def transform_grew_get_without(l, l2, comp):
 # 		without = False
 # 	return les_traits, without
 
+
 def transform_grew_traits_corriges(l, l2, comp): # différence entre deux feats
 	traits = ''
 	mot1 = l.split("|")
@@ -305,6 +422,7 @@ def transform_grew_traits_corriges(l, l2, comp): # différence entre deux feats
 			if i not in mot2:
 				traits = traits + "del_feat X" + str(comp) + "." + i.split("=")[0] + '; '
 	return traits
+
 
 def transform_grew_get_commands(resultat, ligne1, ligne2, dic, comp):
 	correction = ""
