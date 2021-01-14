@@ -7,6 +7,7 @@ from app.utils.grew_utils import GrewService, grew_request
 from flask import Response, abort, current_app, request
 from flask_login import current_user
 from flask_restx import Namespace, Resource, reqparse
+from app.utils.conll3 import conll2tree
 
 api = Namespace(
     "Lexicon", description="Endpoints for dealing with samples of project"
@@ -81,9 +82,9 @@ class TransformationGrewResource(Resource):
         args = parser.parse_args()
         lexicon = args.get("data")
         comp = 0
-        patterns = []
-        commands = []
-        without = ""
+        patterns = list()
+        commands = list()
+        without = list()
         dic = {
             0: "form",
             1 : "lemma",
@@ -93,31 +94,23 @@ class TransformationGrewResource(Resource):
             }
 
         for i in lexicon :
-            rule_grew = "pattern {"
             #print(i['info2Change'])
             line1 = i['currentInfo'].split(' ')
             line2 = i['info2Change'].split(' ')
             #print(line2)
             comp+=1
             patterns.append(transform_grew_get_pattern(line1, dic, comp))
-            rule_grew += patterns[comp-1]+'}'
             resultat = transform_grew_verif(line1, line2)
             co, without_traits = (transform_grew_get_commands(resultat,line1, line2, dic, comp))
             commands.append(co)
-            if without_traits != '' : 
-                if without != "" :
-                    without += ", "
-                without = without + without_traits
-                rule_grew += " without{ "+without_traits+"}"
-            rule_grew += " command{ " + commands[comp-1]+"}"
-        patterns[0] = '% click the button \'Correct lexicon\' to update the queries\n\npattern { ' + patterns[0][0:]
-        commands[0] = 'commands { '+ commands[0][0:]
-        patterns[len(lexicon)-1] += ' }'
-        commands.append('}')
+            if without_traits != "": without.append(without_traits)
+        patterns[0] = 'pattern {\n\t' + patterns[0][0:]
+        commands[0] = 'commands {\n\t'+ commands[0][0:]
         if len(without) != 0 :
-            without = '\nwithout { ' + without + '}'
-        patterns_output = ','.join(patterns)
-        commands_output = ''.join(commands)
+            without[0] = '\nwithout {\n\t'+ without[0][0:]
+            without = ',\n\t'.join(without) + '\n}'
+        patterns_output = ',\n\t'.join(patterns) + '\n}'
+        commands_output = '\n\t'.join(commands) + '\n}'
         resp = {
             "patterns": patterns_output,
             "commands": commands_output,
@@ -128,7 +121,7 @@ class TransformationGrewResource(Resource):
         return resp
 
 
-# TODO : It seems that this function is not finished. Ask Lila what should be done
+# TODO : It seems that this function is not finished. Ask Lila what should be done -> oui
 @api.route("/<project_name>/upload/validator", methods=["POST", "OPTIONS"])
 class LexiconUploadValidatorResource(Resource):
     def post(self, project_name):
@@ -248,53 +241,53 @@ class TryRulesResource(Resource):
         args = parser.parse_args()
         pattern = args.get("pattern")
         rewriteCommands = args.get("rewriteCommands")
-        list_rules = []	
-
+        list_rules = list()
+        without = False
+        # print("pattern : ", pattern, pattern.split("\n"))
+        # print("commands : ", rewriteCommands, rewriteCommands.split("\n"))
         if "X1" in pattern:
-            try:
-                without = pattern[pattern.index("without")+10:-1].split(" ")
-            except ValueError: 
-                without = ""
-            pattern = pattern[pattern.index("{")+3:pattern.index("}")-1].split(",X")
-            print(pattern)
-            commands = rewriteCommands[rewriteCommands.index("{")+2:rewriteCommands.index("}")-2].split("; ")
-            print(commands)
-            for singlePattern in pattern:
-                commands_output, without_output = "", ""
-                for singleCommand in commands:
-                    if singleCommand[singleCommand.index("X")+1] == singlePattern[0]:
-                        commands_output += singleCommand + "; "
-                
-                for singleWithout in without:
-                    #print(singleWithout)
-                    if singleWithout[1] == singlePattern[0]:
-                        without_output += singleWithout
+            if 'without' in pattern: 
+                without = pattern[pattern.index('without'):].split('\n')[1:-1]
+                pattern = pattern[:pattern.index('without')-1].split('\n')[1:-1]
+            else:
+                pattern = pattern.split('\n')[1:-2]
+            commands = rewriteCommands.split('\n')[1:-1]
+
+            for ind in range(len(pattern)):
+                singlePattern = pattern[ind][1:]
+                if ',' == singlePattern[-1]:
+                    singlePattern = singlePattern[:-1]
+
+                commands_output = commands[ind][1:]
+                if without:
+                    print(without)
+                    without_output = ""
+                    for singleWithout in without:
+                        singleWithout = singleWithout[1:]
+                        if ',' == singleWithout[-1]:
+                            singleWithout = singleWithout[:-1]
+                        if singleWithout[1] == singlePattern[1]:
+                            without_output += singleWithout
                 if without_output:
-                    rule = 'pattern {X' + singlePattern + '} without {' + without_output + '} commands {' + commands_output + '}'
+                    rule = 'pattern {' + singlePattern + '} without {' + without_output + '} commands {' + commands_output + '}'
                 else:
-                    rule = 'pattern {X' + singlePattern + '} commands {' + commands_output + '}'
-                # if without_output != "" :
-                # 	query = json.dumps({'pattern': 'pattern {X'+singlePattern+'}', 'without': 'without {'+without_output+'}', 'rewriteCommands': 'commands {'+commands_output+'}'})
-                # 	# jsonify({'pattern': "pattern {X"+singlePattern+"}", 'without': 'without {'+without_output+'}', 'rewriteCommands': 'commands {'+commands_output+'}'})
-                # else :
-                # 	query = json.dumps({'pattern': 'pattern {X'+singlePattern+'}', 'rewriteCommands': 'commands {'+commands_output+'}'})
+                    rule = 'pattern {' + singlePattern + '} commands {' + commands_output + '}'
                 list_rules.append(rule)
-        
         else:
             rule = pattern + " " + rewriteCommands
             list_rules.append(rule)
             print(pattern)
-        
+
         print("liste des règles : ",list_rules)
 
         reply = grew_request(
             "tryRules",
             data={
-                "project_id": project_name,
+                "project_id":project_name,
                 "rules":json.dumps(list_rules)
             },
         )
-        print(8989,reply)
+        # print(8989,reply)
         # tryRule(<string> project_id, [<string> sample_id], [<string> user_id], <string> pattern, <string> commands)
 
         if reply["status"] != "OK":
@@ -317,18 +310,95 @@ class TryRulesResource(Resource):
             print("___")
             # for x in m:
             # 	print('mmmm',x)
-            trees["sample_id"] = trees.get("sample_id", {})
-            trees["sample_id"]["sent_id"] = trees["sample_id"].get(
-                "sent_id", {"conlls": {}, "nodes": {}, "edges": {}}
+            trees[m["sample_id"]] = trees.get(m["sample_id"], {})
+            trees[m["sample_id"]][m["sent_id"]] = trees[m["sample_id"]].get(
+                m["sent_id"], {"conlls": {}, "nodes": {}, "edges": {}}
             )
-            trees["sample_id"]["sent_id"]["conlls"][m["user_id"]] = m["conll"]
+            trees[m["sample_id"]][m["sent_id"]]["conlls"][m["user_id"]] = m["conll"]
             # trees['sample_id']['sent_id']['matches'][m['user_id']]=[{"edges":{},"nodes":{}}] # TODO: get the nodes and edges from the grew server!
-            if "sentence" not in trees["sample_id"]["sent_id"]:
-                trees["sample_id"]["sent_id"]["sentence"] = conll2tree(
+            if "sentence" not in trees[m["sample_id"]][m["sent_id"]]:
+                trees[m["sample_id"]][m["sent_id"]]["sentence"] = conll2tree(
                     m["conll"]
                 ).sentence()
             # print('mmmm',trees['sample_id']['sent_id'])
-        return trees
+            print(trees)
+        print(len(trees))
+        print(len(reply['data']))
+        resp = {"status_code": 200, "trees": trees, "rules": list_rules}
+        return resp
+
+
+
+@api.route("/<string:project_name>/apply-rules")
+class ApplyRulesResource(Resource):
+    def post(self, project_name: str):
+        """
+        expects json with grew pattern such as
+        {
+        "pattern":"pattern { N [upos=\"NUM\"] }"
+        "rewriteCommands":"commands { N [upos=\"NUM\"] }"
+        }
+        important: simple and double quotes must be escaped!
+
+
+        returns:
+        {'sample_id': 'P_WAZP_07_Imonirhuas.Life.Story_PRO', 'sent_id': 'P_WAZP_07_Imonirhuas-Life-Story_PRO_97', 'nodes': {'N': 'Bernard_11'}, 'edges': {}}, {'sample_id':...
+        """
+        
+        project = ProjectService.get_by_name(project_name)
+        ProjectService.check_if_project_exist(project)
+
+        parser = reqparse.RequestParser()
+        parser.add_argument(name="rules", type=str, action="append")
+        parser.add_argument(name="SampleIds", type=str, action="append")
+        args = parser.parse_args()
+        rules = args.get("rules")
+        sample_ids = args.get("SampleIds")
+
+        print(rules, sample_ids)
+        print(type(rules), type(sample_ids))
+        reply = grew_request(
+            "applyRules",
+            data={
+                "project_id":project_name,
+                "sample_id":json.dumps(sample_ids),
+                "rules":json.dumps(rules)
+            },
+        )
+        print(8989,reply)
+
+        # if reply["status"] != "OK":
+        #     if "message" in reply:
+        #         resp = {
+        #             "status_code": 444,
+        #             "status": reply["status"],
+        #             "message": reply["message"],
+        #         }
+        #         status_code = 444
+        #         return resp
+        #     abort(400)
+        # trees = {}
+        # # matches={}
+        # # reendswithnumbers = re.compile(r"_(\d+)$")
+        # # {'WAZL_15_MC-Abi_MG': {'WAZL_15_MC-Abi_MG__8': {'sentence': '# kalapotedly < you see < # ehn ...', 'conlls': {'kimgerdes': ..
+        # for m in reply["data"]:
+        #     if m["user_id"] == "":
+        #         abort(409)
+        #     print("___")
+        #     # for x in m:
+        #     # 	print('mmmm',x)
+        #     trees["sample_id"] = trees.get("sample_id", {})
+        #     trees["sample_id"]["sent_id"] = trees["sample_id"].get(
+        #         "sent_id", {"conlls": {}, "nodes": {}, "edges": {}}
+        #     )
+        #     trees["sample_id"]["sent_id"]["conlls"][m["user_id"]] = m["conll"]
+        #     # trees['sample_id']['sent_id']['matches'][m['user_id']]=[{"edges":{},"nodes":{}}] # TODO: get the nodes and edges from the grew server!
+        #     if "sentence" not in trees["sample_id"]["sent_id"]:
+        #         trees["sample_id"]["sent_id"]["sentence"] = conll2tree(
+        #             m["conll"]
+        #         ).sentence()
+        #     # print('mmmm',trees['sample_id']['sent_id'])
+        # return trees
 
 
 
@@ -429,7 +499,7 @@ def transform_grew_get_commands(resultat, ligne1, ligne2, dic, comp):
 	commands = ""
 	# without_traits = ""
 	list_traits2 = []
-	temp_var = ""
+	without = ""
 	for e in resultat:
 		if e == 4: #si traits sont différents
 			# try :
@@ -437,7 +507,7 @@ def transform_grew_get_commands(resultat, ligne1, ligne2, dic, comp):
 			if ligne2[e] != "_" and len(ligne1[e].split("|")) < len(ligne2[e].split("|")) or ligne1[e] == "_":
 				if ligne2[e] != "": #insertion des traits
 					list_traits2, feats_str = transform_grew_get_without(ligne1[e], ligne2[e], comp)
-					temp_var = ",".join(list_traits2)
+					without = ",".join(list_traits2)
 					#print(temp_var,"123123", list_traits2)
 					commands = commands + feats_str
 					#print(without_traits,"1112222333", list_traits2)
@@ -450,4 +520,4 @@ def transform_grew_get_commands(resultat, ligne1, ligne2, dic, comp):
 			commands = commands + "X" + str(comp) + "." + dic[e] + '=\"' + ligne2[e] + '\"; '
 	correction = correction + commands
 	#print(correction, "------", commands)
-	return correction, temp_var
+	return correction, without
