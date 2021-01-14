@@ -74,6 +74,7 @@ class SampleExportService:
                 usertrees[user].append(conll)
         for user, content in usertrees.items():
             usertrees[user] = "\n".join(usertrees[user])
+            usertrees[user] += "\n"
         return usertrees
 
     @staticmethod
