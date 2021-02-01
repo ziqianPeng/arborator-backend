@@ -259,9 +259,9 @@ class TryRulesResource(Resource):
                     singlePattern = singlePattern[:-1]
 
                 commands_output = commands[ind][1:]
+                without_output = ""
                 if without:
                     print(without)
-                    without_output = ""
                     for singleWithout in without:
                         singleWithout = singleWithout[1:]
                         if ',' == singleWithout[-1]:
@@ -356,7 +356,7 @@ class ApplyRulesResource(Resource):
         sample_ids = args.get("SampleIds")
 
         print(rules, sample_ids)
-        print(type(rules), type(sample_ids))
+        print(project_name, sample_ids, rules)
         reply = grew_request(
             "applyRules",
             data={
