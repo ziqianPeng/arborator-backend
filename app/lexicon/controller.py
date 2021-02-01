@@ -329,76 +329,36 @@ class TryRulesResource(Resource):
 
 
 
-@api.route("/<string:project_name>/apply-rules")
-class ApplyRulesResource(Resource):
-    def post(self, project_name: str):
-        """
-        expects json with grew pattern such as
-        {
-        "pattern":"pattern { N [upos=\"NUM\"] }"
-        "rewriteCommands":"commands { N [upos=\"NUM\"] }"
-        }
-        important: simple and double quotes must be escaped!
+# @api.route("/<string:project_name>/apply-rules")
+# class ApplyRulesResource(Resource):
+#     def post(self, project_name: str):
 
-
-        returns:
-        {'sample_id': 'P_WAZP_07_Imonirhuas.Life.Story_PRO', 'sent_id': 'P_WAZP_07_Imonirhuas-Life-Story_PRO_97', 'nodes': {'N': 'Bernard_11'}, 'edges': {}}, {'sample_id':...
-        """
         
-        project = ProjectService.get_by_name(project_name)
-        ProjectService.check_if_project_exist(project)
+#         project = ProjectService.get_by_name(project_name)
+#         ProjectService.check_if_project_exist(project)
 
-        parser = reqparse.RequestParser()
-        parser.add_argument(name="rules", type=str, action="append")
-        parser.add_argument(name="SampleIds", type=str, action="append")
-        args = parser.parse_args()
-        rules = args.get("rules")
-        sample_ids = args.get("SampleIds")
+#         parser = reqparse.RequestParser()
+#         parser.add_argument(name="results", type=str)
+#         parser.add_argument(name="sentenceIds", type=str, action="append")
+#         args = parser.parse_args()
+#         results = args.get("results")
+#         sentence_ids = args.get("sentenceIds")
 
-        print(rules, sample_ids)
-        print(project_name, sample_ids, rules)
-        reply = grew_request(
-            "applyRules",
-            data={
-                "project_id":project_name,
-                "sample_id":json.dumps(sample_ids),
-                "rules":json.dumps(rules)
-            },
-        )
-        print(8989,reply)
+#         print(project_name, sentence_ids, results)
+#         results = results.replace("\'", "\"")
+#         results = json.loads(results)
 
-        # if reply["status"] != "OK":
-        #     if "message" in reply:
-        #         resp = {
-        #             "status_code": 444,
-        #             "status": reply["status"],
-        #             "message": reply["message"],
-        #         }
-        #         status_code = 444
-        #         return resp
-        #     abort(400)
-        # trees = {}
-        # # matches={}
-        # # reendswithnumbers = re.compile(r"_(\d+)$")
-        # # {'WAZL_15_MC-Abi_MG': {'WAZL_15_MC-Abi_MG__8': {'sentence': '# kalapotedly < you see < # ehn ...', 'conlls': {'kimgerdes': ..
-        # for m in reply["data"]:
-        #     if m["user_id"] == "":
-        #         abort(409)
-        #     print("___")
-        #     # for x in m:
-        #     # 	print('mmmm',x)
-        #     trees["sample_id"] = trees.get("sample_id", {})
-        #     trees["sample_id"]["sent_id"] = trees["sample_id"].get(
-        #         "sent_id", {"conlls": {}, "nodes": {}, "edges": {}}
-        #     )
-        #     trees["sample_id"]["sent_id"]["conlls"][m["user_id"]] = m["conll"]
-        #     # trees['sample_id']['sent_id']['matches'][m['user_id']]=[{"edges":{},"nodes":{}}] # TODO: get the nodes and edges from the grew server!
-        #     if "sentence" not in trees["sample_id"]["sent_id"]:
-        #         trees["sample_id"]["sent_id"]["sentence"] = conll2tree(
-        #             m["conll"]
-        #         ).sentence()
-        #     # print('mmmm',trees['sample_id']['sent_id'])
-        # return trees
+#         # for sentence_id in sentence_ids:
+#         #     sample_id = sentence_id.split("__")[0]
+#         #     for projet in results:
+#         #         if projet == sample_id:
+#         #             if projet[sentence_id]:
+#         #                 print(projet)
+#         #             else:
+#         #                 print("hum", projet)
+#         #         else:
+#         #             print(projet, sample_id)
+
 
 
 
