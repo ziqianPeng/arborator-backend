@@ -82,9 +82,8 @@ class TransformationGrewResource(Resource):
         args = parser.parse_args()
         lexicon = args.get("data")
         comp = 0
-        patterns = list()
-        commands = list()
-        without = list()
+        list_rules = str()
+        rule = str()
         dic = {
             0: "form",
             1 : "lemma",
@@ -94,29 +93,32 @@ class TransformationGrewResource(Resource):
             }
 
         for i in lexicon :
+            pattern = "pattern { "
+            command = "command { "
+            without = "without { "
             #print(i['info2Change'])
             line1 = i['currentInfo'].split(' ')
             line2 = i['info2Change'].split(' ')
             #print(line2)
             comp+=1
-            patterns.append(transform_grew_get_pattern(line1, dic, comp))
+            pattern += transform_grew_get_pattern(line1, dic, comp) + " }"
             resultat = transform_grew_verif(line1, line2)
-            co, without_traits = (transform_grew_get_commands(resultat,line1, line2, dic, comp))
-            commands.append(co)
-            if without_traits != "": without.append(without_traits)
-        patterns[0] = 'pattern {\n\t' + patterns[0][0:]
-        commands[0] = 'commands {\n\t'+ commands[0][0:]
-        if len(without) != 0 :
-            without[0] = '\nwithout {\n\t'+ without[0][0:]
-            without = ',\n\t'.join(without) + '\n}'
-        patterns_output = ',\n\t'.join(patterns) + '\n}'
-        commands_output = '\n\t'.join(commands) + '\n}'
+            co, without_traits = (transform_grew_get_commands(resultat, line1, line2, dic, comp))
+            command += co + "}"
+            if without_traits == "":
+                rule = pattern + " " + command
+            else:
+                without += without_traits + " }"
+                rule = pattern + " " + without + " " + command
+            if i == lexicon[0]:
+                list_rules += rule
+            else:
+                list_rules += "\n" + rule
+        
         resp = {
-            "patterns": patterns_output,
-            "commands": commands_output,
-            "without": without,
+            "rules": list_rules,
         }
-        # print("patterns :", ','.join(patterns), "\ncommands :", ''.join(commands))
+        print(list_rules)
         resp["status_code"] = 200
         return resp
 

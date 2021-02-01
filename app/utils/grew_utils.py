@@ -23,6 +23,7 @@ def grew_request(fct_name, data={}, files={}):
         )
         print(error_message)
         abort(500, {"message": error_message})
+    print(response)
     response = json.loads(response.text)
     if response.get("status") != "OK":
         if "data" in response:
