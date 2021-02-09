@@ -231,6 +231,18 @@ class ProjectAccessManyResource(Resource):
 
         access_level = ProjectAccess.LABEL_TO_LEVEL[args.targetrole]
 
+        # remove previous ones before setting new admins or guests
+        users = None
+        if args.targetrole == 'admin':
+          users = ProjectAccessService.get_admins(project.id)
+        else:
+          users = ProjectAccessService.get_guests(project.id)
+        for user in users:
+          ProjectAccessService.delete(user, project.id)
+
+        if not args.user_ids: # if no guest is selected, then return
+          return ProjectAccessService.get_users_role(project.id)
+        
         for user_id in args.user_ids:
             # TODO : add interface to new_attrs
             new_attrs = {
